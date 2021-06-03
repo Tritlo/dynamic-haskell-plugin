@@ -1,4 +1,4 @@
-name: TestDyn
+name: Test
 cabal-version: >= 1.24
 build-type: Simple
 version: 1.0.0
@@ -8,7 +8,7 @@ executable test_dyn
   build-depends:  base >= 4 && < 5,
                   ghc-prim >= 0.5,
                   containers,
-                  writ-plugin <= 1
+                  dynamic-haskell-plugin <= 1
   extensions: DataKinds,
               FlexibleInstances,
               MultiParamTypeClasses,

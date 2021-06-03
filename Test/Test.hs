@@ -1,7 +1,6 @@
 {-# LANGUAGE PatternSynonyms #-}
-{-# OPTIONS_GHC -fplugin=WRIT.Plugin
-                -fplugin-opt=WRIT.Plugin:marshal-dynamics
-                -fplugin-opt=WRIT.Plugin:debug
+{-# OPTIONS_GHC -fplugin=Data.Dynamic.Plugin
+                -fplugin-opt=Data.Dynamic.Plugin:debug
                 -dcore-lint
                  #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -12,15 +11,8 @@
 {-# LANGUAGE GADTs #-}
 module Main where
 
-import WRIT.Configure
 import Data.Dynamic
-
--- getValsOfTy :: Typeable a => [Dynamic] -> [a]
--- getValsOfTy = mapMaybe fromDynamic
-
--- xs :: [Dynamic]
--- xs = ["thanks", (), "i", False,
---       "hate", (42 :: Int), "it"]
+import Data.Dynamic.Plugin
 
 data A = A | B deriving (Show)
 data C = C deriving (Show)
@@ -36,13 +28,6 @@ instance Foo A where
 instance Foo C where
     foo _ = 20
     insts x = "C: " ++ show x
-
-pattern Is :: forall a. (Typeable a) => a -> Dynamic
-pattern Is res <- (fromDynamic @a -> Just res)
-
--- data A = A | B
--- data C = C
-
 
 isWithDyn :: IO ()
 isWithDyn = print $ case toDyn A of

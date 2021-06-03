@@ -8,9 +8,12 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module WRIT.Plugin ( plugin, module WRIT.Configure ) where
-
-import WRIT.Configure
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ViewPatterns #-}
+module Data.Dynamic.Plugin ( plugin, Default, TypeError(..), ErrorMessage(..),
+                             castDyn, dynDispatch, pattern Is) where
 
 import Control.Monad
     ( when, unless, guard, foldM, zipWithM, msum, filterM, replicateM )
@@ -136,17 +139,62 @@ import Predicate
 
 
 
-
+import GHC.TypeLits (TypeError(..),ErrorMessage(..))
+--import Data.Typeable
+import Type.Reflection (SomeTypeRep, someTypeRep)
+import Data.Dynamic
 import GHC.Stack
 
 --------------------------------------------------------------------------------
 -- Exported
 
 plugin :: Plugin
-plugin = defaultPlugin { tcPlugin = Just . gritPlugin
+plugin = defaultPlugin { tcPlugin = Just . dynamicPlugin
                        , pluginRecompile = purePlugin
                        , installCoreToDos = coreDyn }
 
+-- | The Default family allows us to 'default' free type variables of a given
+-- kind in a constraint to the given value, i.e. if there is an instance
+-- Default k for and a is a free type variable of kind k in constraint c,
+-- then a ~ Default k will be added to the context of c, and
+-- Γ, a ~ Defaul k |- c : Constraint checked for validity.
+type family Default k :: k
+
+-- | castDyn casts a Dynamic to any typeable value, and fails with a descriptive
+-- error if the types dont match. Automatically inserted for casting Dynamic
+-- values back to static values.
+castDyn :: forall a . (Typeable a, HasCallStack) => Dynamic -> a
+castDyn arg = fromDyn arg err
+  where err = error ("Couldn't match expected type '" ++ target
+                     ++ "' with actual dynamic type '" ++ actual  ++ "'")
+        target = show (someTypeRep (Proxy :: Proxy a))
+        actual = show (dynTypeRep arg)
+
+dynDispatch :: forall b . (Typeable b)
+            => [(SomeTypeRep, Dynamic)] -- ^ Provided by the plugin
+            -> String                   -- ^ The name of the function
+            -> String                   -- ^ The name of the class
+            -> Dynamic -> b
+dynDispatch insts fun_name class_name dispatcher =
+    case lookup argt insts of
+      Just f ->
+         fromDyn f
+         (error $ "Type mismatch when dispatching '"
+         ++ fun_name
+         ++ "' expecting '" ++ show targett
+         ++"' but got '" ++ show (dynTypeRep f)
+         ++ "' using dispatch table for '"
+         ++ class_name ++ "'!")
+      _ -> error $ "No instance of '" ++ class_name ++ " " ++ show argt ++ "'"
+                  ++ " found when dispatching for '"
+                  ++ fun_name ++ " :: " ++ show targett
+                  ++ "', with 'Dynamic ~ " ++ show argt
+                  ++ "' in this context."
+ where argt = dynTypeRep dispatcher
+       targett = someTypeRep (Proxy :: Proxy b)
+
+pattern Is :: forall a. (Typeable a) => a -> Dynamic
+pattern Is res <- (fromDynamic @a -> Just res)
 --------------------------------------------------------------------------------
 
 data Log = Log { log_pred_ty :: Type, log_loc :: CtLoc}
@@ -203,7 +251,7 @@ instance Outputable Log where
    -- We do some extra work to pretty print the Defaulting messages
    ppr Log{..}
      | Just msg <- userTypeError_maybe log_pred_ty = pprUserTypeErrorTy msg
-     | otherwise = text "WRIT" <+> ppr log_pred_ty
+     | otherwise = text "DataDynamicPlugin" <+> ppr log_pred_ty
    ppr LogDefault{..} = fsep [ text "Defaulting"
                                -- We want to print a instead of a0
                              , quotes (ppr (mkTyVarTy log_var)
@@ -268,37 +316,25 @@ addWarning dflags log = tcPluginIO $ warn (ppr log)
 data Flags = Flags { f_debug            :: Bool
                    , f_quiet            :: Bool
                    , f_keep_errors      :: Bool
-                   , f_fill_holes :: Bool
-                   , f_fill_hole_depth :: Int
                     } deriving (Show)
 
 getFlags :: [CommandLineOption] -> Flags
-getFlags opts = Flags { f_debug                 = "debug"            `elem` opts
-                      , f_quiet                 = "quiet"            `elem` opts
-                      , f_keep_errors           = "keep-errors"      `elem` opts
-                      , f_fill_holes            = "fill-holes" `elem` opts
-                      , f_fill_hole_depth       = getFillHoleDepth opts
+getFlags opts = Flags { f_debug        = "debug"        `elem` opts
+                      , f_quiet        = "quiet"        `elem` opts
+                      , f_keep_errors  = "keep_errors"  `elem` opts
                       }
 
-getFillHoleDepth :: [CommandLineOption] -> Int
-getFillHoleDepth [] = 0
-getFillHoleDepth (o:opts)
- | ["fill-hole-depth", n] <- split '=' o =
-   case readMaybe n of
-       Just n -> n
-       _ -> error "WRIT: Invalid fill-hole-depth parameter"
- | otherwise = getFillHoleDepth opts
 
 pprOut :: Outputable a => String -> a -> TcPluginM ()
 pprOut str a = do dflags <- unsafeTcPluginTcM getDynFlags
                   tcPluginIO $ putStrLn (str ++ " " ++ showSDoc dflags (ppr a))
 
-gritPlugin :: [CommandLineOption] -> TcPlugin
-gritPlugin opts = TcPlugin initialize solve stop
+dynamicPlugin :: [CommandLineOption] -> TcPlugin
+dynamicPlugin opts = TcPlugin initialize solve stop
   where
     flags@Flags{..} = getFlags opts
     initialize = do
-      when f_debug $ tcPluginIO $ putStrLn "Starting WRIT in debug mode..."
+      when f_debug $ tcPluginIO $ putStrLn "Starting DataDynamicPlugin in debug mode..."
       when f_debug $ tcPluginIO $ print flags
       tcPluginIO $ newIORef Set.empty
     solve :: IORef (Set Log) -> [Ct] -> [Ct] -> [Ct] -> TcPluginM TcPluginResult
@@ -356,7 +392,7 @@ data DynCasts = DC { dc_typeable :: Class
 
 getPluginTyCons :: TcPluginM PluginTyCons
 getPluginTyCons =
-   do fpmRes <- findImportedModule (mkModuleName "WRIT.Configure") Nothing
+   do fpmRes <- findImportedModule (mkModuleName "Data.Dynamic.Plugin") Nothing
       dc_dynamic <- getTyCon dYNAMIC "Dynamic"
       dc_typeable <- getClass tYPEABLE_INTERNAL "Typeable"
       dc_sometyperep <- getTyCon tYPEABLE_INTERNAL "SomeTypeRep"
@@ -423,7 +459,7 @@ solveDefault ptc@PTC{..} ct =
                               LogDefault{log_pred_ty = ctPred ct,
                                          log_var = var, log_kind = varType var,
                                          log_res = def, log_loc =ctLoc ct})
-           where EvExpr proof = mkProof "grit-default" (mkTyVarTy var) defApp
+           where EvExpr proof = mkProof "data-dynamic-default" (mkTyVarTy var) defApp
                  pred_ty = mkPrimEqPredRole Nominal (mkTyVarTy var) defApp
                  defApp = mkTyConApp ptc_default [varType var]
 
@@ -492,7 +528,7 @@ solveDynamic ptc@PTC{..} ct
 
 
 dYNAMICPLUGINPROV :: String
-dYNAMICPLUGINPROV = "grit-dynamic"
+dYNAMICPLUGINPROV = "data-dynamic"
 
 marshalDynamic :: Kind -> Type -> Type -> SolveFun
 marshalDynamic k1 ty1 ty2 PTC{..} ct@(CIrredCan CtWanted{ctev_dest = HoleDest coho} _) =
@@ -556,7 +592,7 @@ type DynExprMap  = Map (Either String Var) (Expr Var) -- These we need to find f
 -- | Here we replace the "proofs" of the casts with te actual calls to toDyn
 -- and castDyn.
 coreDyn :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
-coreDyn clo tds = return $ CoreDoPluginPass "WRIT" (bindsOnlyPass addDyn):tds
+coreDyn clo tds = return $ CoreDoPluginPass "DataDynamicPlugin" (bindsOnlyPass addDyn):tds
   where
     Flags {..} = getFlags clo
     found var expr = Map.singleton var expr
@@ -568,9 +604,9 @@ coreDyn clo tds = return $ CoreDoPluginPass "WRIT" (bindsOnlyPass addDyn):tds
     -- We need to find the two types of expressions, either the exported globals
     -- (which we can then directly use, or the seq'd ones buried within cases
     -- for locals).
-    -- We grab the `grit-dynamic_a1bK :: A -> Dynamics` from the binds, and
+    -- We grab the `data-dynamic_a1bK :: A -> Dynamics` from the binds, and
     -- the `case case <dyn_expr> of {DEFAULT -> <UnivCo proof>} of <covar>` from
-    -- the expressions, where Left <grit-dynamic_var_name> and Right <covar>.
+    -- the expressions, where Left <data-dynamic_var_name> and Right <covar>.
     getDynamicCastsBind :: CoreBind -> [(Either String Var, Expr Var)]
     getDynamicCastsBind (NonRec var expr) |
       occNameString (occName var) == dYNAMICPLUGINPROV =
@@ -627,9 +663,9 @@ coreDyn clo tds = return $ CoreDoPluginPass "WRIT" (bindsOnlyPass addDyn):tds
       where addDynToAlt (c, bs, expr) = (c, bs,) <$> addDynToExpr dexprs expr
     -- Cast is the only place that we do any work beyond just recursing over
     -- the sub-expressions. Here we replace the
-    -- (A `cast` UnivCo (PluginProv <grit-dynamic_var_name>) Nominal A Dynamic)
+    -- (A `cast` UnivCo (PluginProv <data-dynamic_var_name>) Nominal A Dynamic)
     -- and (B `cast` SubCo <covar>) that was generated in the TcPlugin with
-    -- the respective (grit-dynamic_var_name A) (i.e. apply the function to A)
+    -- the respective (data-dynamic_var_name A) (i.e. apply the function to A)
     -- and (toDyn @B ... B).
     addDynToExpr dexprs orig@(Cast expr coercion) = do
       nexpr <- addDynToExpr dexprs expr
