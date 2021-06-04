@@ -29,7 +29,6 @@ import qualified Data.Set as Set
 import Data.Set (Set)
 import Data.Proxy
 import Data.Dynamic
-import Type.Reflection (someTypeRep)
 import Text.Read (readMaybe)
 
 import GHC.TypeLits(TypeError(..), ErrorMessage(..))
@@ -140,7 +139,7 @@ import Predicate
 
 import GHC.TypeLits (TypeError(..),ErrorMessage(..))
 --import Data.Typeable
-import Type.Reflection (SomeTypeRep, someTypeRep)
+import Type.Reflection (SomeTypeRep(..), someTypeRep)
 import Data.Dynamic
 import GHC.Stack
 
@@ -194,6 +193,7 @@ dynDispatch insts fun_name class_name dispatcher =
 
 pattern Is :: forall a. (Typeable a) => a -> Dynamic
 pattern Is res <- (fromDynamic @a -> Just res)
+
 --------------------------------------------------------------------------------
 
 data Log = Log { log_pred_ty :: Type, log_loc :: CtLoc}
@@ -691,7 +691,8 @@ solveDynDispatch ptc@PTC{..} ct | CDictCan{..} <- ct
                                 , [arg] <- cc_tyargs
                                 , arg `tcEqType` dynamic = do
   class_insts <- flip classInstances cc_class <$> getInstEnvs
-  let class_tys = map is_tys class_insts
+  let (unsaturated, saturated) = partition (not . null . is_tvs) class_insts
+      class_tys = map is_tys saturated
   -- We can only dispatch on singe argument classes
   if not (all ((1 ==) . length) class_tys) then wontSolve ct
   else do
@@ -703,15 +704,23 @@ solveDynDispatch ptc@PTC{..} ct | CDictCan{..} <- ct
     let scEvIds = map (evId . ctEvId) scChecks
     args_n_checks <- mapM (methodToDynDispatch cc_class class_tys)
                           (classMethods cc_class)
-    let log = Set.singleton (LogSDoc (ctPred ct) (ctLoc ct) $
+    let logs = Set.fromList $ [LogSDoc (ctPred ct) (ctLoc ct) $
                 fsep [text "Building dispatch table for"
                 , (quotes $ ppr $ ctPred ct)
                 , (text "based on")
-                , (fsep $ map (quotes . ppr) class_insts)])
+                , (fsep $ map (quotes . ppr) saturated)
+                ]]
+                -- ++ if (null unsaturated) then [] else (
+                -- [LogSDoc (ctPred ct) (ctLoc ct) $
+                --   fsep [text "Cannot dispatch"
+                --        , (quotes $ ppr $ ctPred ct)
+                --        , (text "on")
+                --        , (fsep $ map (quotes . ppr) unsaturated)
+                --        , text "due to them not being saturated"]])
         classCon = tyConSingleDataCon (classTyCon cc_class)
         (args, checks) = unzip args_n_checks
         proof = evDataConApp classCon cc_tyargs $ scEvIds ++ args
-    couldSolve (Just (proof, ct)) (scChecks ++ concat checks) log
+    couldSolve (Just (proof, ct)) (scChecks ++ concat checks) logs
                                | otherwise = wontSolve ct
   where
      DC {..} = ptc_dc
@@ -808,7 +817,22 @@ solveDynDispatch ptc@PTC{..} ct | CDictCan{..} <- ct
                      matches (b:bs) ty = (varType b, t, b):matches bs r
                        where (t,r) = splitFunTy ty -- Safe, binders are as long or longer.
                  (fappArgs, fappChecks) <- unzip <$> mapM toFappArg (matches revl res_ty)
-                 let dfapp = mkCoreApps dyn_app [mkCoreLams (dyn_pred_vars ++ revl) $ mkCoreApps fapp fappArgs]
+                 let fapp_app = mkCoreApps fapp fappArgs
+                     -- If the result is dependent on the type, we must wrap it in
+                     -- a toDyn. I.e. for Ord Dynamic, 
+                     -- max :: a -> a -> a  must have the type Dynamic -> Dynamic -> Dynamic
+                     -- so we must cast the result to 
+                     --
+                     -- NOTE BREAKS, i.e. max (A :: Dynamic) (B :: Dynamic)
+                     --             is just the latter argument.
+                     dfapp_arg = if (exprType (lambda fapp_app) `tcEqType` whole_ty)
+                                 then lambda fapp_app
+                                 else lambda (td fapp_app)
+                        where dfapp_arg_mb = lambda fapp_app
+                              lambda = mkCoreLams (dyn_pred_vars ++ revl)
+                              td x = mkCoreApps (Var dc_to_dyn) [Type dp_ty, Var dptev, x]
+
+                     dfapp = mkCoreApps dyn_app [dfapp_arg]
                      trapp = mkCoreApps (Var dc_typerep) [Type (tcTypeKind dp_ty), Type dp_ty, Var dptev]
                      strapp = mkCoreApps
                                  (Var (dataConWrapId dc_sometyperep_dc))
@@ -822,7 +846,9 @@ solveDynDispatch ptc@PTC{..} ct | CDictCan{..} <- ct
              let revl = reverse (dp:lams)
                  mkFunApp a b = mkTyConApp funTyCon [tcTypeKind a,tcTypeKind b, a, b]
              (tev, check_typeable) <- checkTypeable whole_ty
-             dpt_els_n_checks <- mapM (\ct -> mkDpEl (fill_ty ct) revl ct) class_tys
+             let saturated = filter is_saturated class_tys
+                 is_saturated = all (not . isPredTy)
+             dpt_els_n_checks <- mapM (\ct -> mkDpEl (fill_ty ct) revl ct) saturated
              -- To make the types match up, we must make a dictionary for each of
              -- the predicates, even though these will never be used.
              let (dpt_els, dpt_checks) = unzip dpt_els_n_checks

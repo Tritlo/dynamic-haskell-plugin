@@ -1,8 +1,8 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# OPTIONS_GHC -fplugin=Data.Dynamic.Plugin
-                -fplugin-opt=Data.Dynamic.Plugin:debug
                 -dcore-lint
                  #-}
+                --fplugin-opt=Data.Dynamic.Plugin:debug
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
@@ -13,9 +13,10 @@ module Main where
 
 import Data.Dynamic
 import Data.Dynamic.Plugin
+import Data.List
 
-data A = A | B deriving (Show)
-data C = C deriving (Show)
+data A = A | B deriving (Show, Eq, Ord)
+data C = C deriving (Show, Eq, Ord)
 
 class Foo a where
    foo :: a -> Int
@@ -50,8 +51,32 @@ main = do
   mapM print s
   mapM_ (print . foo) s
   mapM_ (print . insts) s
-  let a = A :: Dynamic
-  print (a :: A)
 
   isWithDyn
   isDirect
+  -- Fails, since we don't create an instance of Eq [C], since we cannot
+  -- construct that when we don't know what [C] is!
+  print $ ([A] :: Dynamic) == ([C] :: Dynamic)
+    
+  -- Note: Does not typecheck! Which is good, because how would we sort
+  -- based on the different types?
+  -- pr nt ((A :: Dynamic) <= (C :: Dynamic))
+  -- Typechecks and works
+  print ( (max (A :: Dynamic) (B :: Dynamic)) :: A )
+  print ( (max (B :: Dynamic) (A :: Dynamic)) :: A)
+  -- Typechecks, but returns a Dynamic
+  print ( (max (A :: Dynamic) (C :: Dynamic)) )
+  
+  -- All of these typecheck, but return a runtime error.
+  -- print ( (max (C :: Dynamic) (A :: Dynamic)) :: A ) -- Does not typecheck, good!
+  -- print ( (max (C :: Dynamic) (A :: Dynamic)) :: C ) -- Doesn't typecheck either, great!
+  -- print ( (max (C :: Dynamic) (B :: Dynamic)) :: A )
+  -- print ( (max (C :: Dynamic) (B :: Dynamic)) :: C )
+  -- print ( (max (A :: Dynamic) (C :: Dynamic)) :: A)
+  -- print ( (max (A :: Dynamic) (C :: Dynamic)) :: C)
+  -- print ( (max (B :: Dynamic) (C :: Dynamic)) :: A)
+  -- print ( (max (B :: Dynamic) (C :: Dynamic)) :: C)
+  -- Returns a type error, but it's located on the first use of the dictionarier,
+  -- because that's where the error (i.e. the instance) originates from!
+  -- print $ sort s
+
