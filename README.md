@@ -111,6 +111,15 @@ Test.hs:48:16: warning: Marshalling ‘C’ to Dynamic
    |
 48 |   let s = [A,B,C] :: [Dynamic]
    |                ^
+
+Test.hs:50:18: warning:
+    Building dispatch table for ‘Foo Dynamic’ based on
+    ‘instance Foo A -- Defined at Test.hs:23:10’
+    ‘instance Foo C -- Defined at Test.hs:27:10’
+   |
+50 |   mapM_ (print . foo) s
+   |                  ^^^
+
 Linking /home/tritlo/dynamic-haskell-plugin/dist-newstyle/build/x86_64-linux/ghc-8.10.4/Test-1.0.0/x/test_dyn/build/test_dyn/test_dyn ...
 <<A>>
 <<A>>
@@ -124,3 +133,10 @@ Linking /home/tritlo/dynamic-haskell-plugin/dist-newstyle/build/x86_64-linux/ghc
 "was 1A"
 "was 2C"
 ```
+Build profile: -w ghc-8.10.4 -O1
+In order, the following will be built (use -v for more details):
+ - dynamic-haskell-plugin-0.0.1 (lib) (file Data/Dynamic/Plugin.hs changed)
+ - Test-1.0.0 (exe:test_dyn) (dependency rebuilt)
+Preprocessing library for dynamic-haskell-plugin-0.0.1..
+Building library for dynamic-haskell-plugin-0.0.1..
+[1 of 1] Compiling Data.Dynamic.Plugin ( Data/Dynamic/Plugin.hs, /home/tritlo/dynamic-haskell-plugin/dist-newstyle/build/x86_64-linux/ghc-8.10.4/dynamic-haskell-plugin-0.0.1/build/Data/Dynamic/Plugin.o, /home/tritlo/dynamic-haskell-plugin/dist-newstyle/build/x86_64-linux/ghc-8.10.4/dynamic-haskell-plugin-0.0.1/build/Data/Dynamic/Plugin.dyn_o )

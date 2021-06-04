@@ -1,5 +1,4 @@
-
--- Copyright (c) 2020 Matthías Páll Gissurarson
+-- Copyright (c) 2020-2021 Matthías Páll Gissurarson
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DataKinds #-}
@@ -704,7 +703,11 @@ solveDynDispatch ptc@PTC{..} ct | CDictCan{..} <- ct
     let scEvIds = map (evId . ctEvId) scChecks
     args_n_checks <- mapM (methodToDynDispatch cc_class class_tys)
                           (classMethods cc_class)
-    let log = Set.empty
+    let log = Set.singleton (LogSDoc (ctPred ct) (ctLoc ct) $
+                fsep [text "Building dispatch table for"
+                , (quotes $ ppr $ ctPred ct)
+                , (text "based on")
+                , (fsep $ map (quotes . ppr) class_insts)])
         classCon = tyConSingleDataCon (classTyCon cc_class)
         (args, checks) = unzip args_n_checks
         proof = evDataConApp classCon cc_tyargs $ scEvIds ++ args
