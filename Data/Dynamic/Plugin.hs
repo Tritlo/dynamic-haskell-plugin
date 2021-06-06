@@ -705,18 +705,13 @@ solveDynDispatch ptc@PTC{..} ct | CDictCan{..} <- ct
     args_n_checks <- mapM (methodToDynDispatch cc_class class_tys)
                           (classMethods cc_class)
     let logs = Set.fromList $ [LogSDoc (ctPred ct) (ctLoc ct) $
-                fsep [text "Building dispatch table for"
-                , (quotes $ ppr $ ctPred ct)
-                , (text "based on")
-                , (fsep $ map (quotes . ppr) saturated)
-                ]]
-                -- ++ if (null unsaturated) then [] else (
-                -- [LogSDoc (ctPred ct) (ctLoc ct) $
-                --   fsep [text "Cannot dispatch"
-                --        , (quotes $ ppr $ ctPred ct)
-                --        , (text "on")
-                --        , (fsep $ map (quotes . ppr) unsaturated)
-                --        , text "due to them not being saturated"]])
+                fsep ([text "Building dispatch table for"
+                , quotes $ ppr $ ctPred ct
+                , text "based on"
+                , fsep $ map (quotes . ppr) saturated
+                ] ++ if null unsaturated then []
+                     else [ text "Skipping unsaturated instances"
+                     , fsep $ map (quotes . ppr) unsaturated ])]
         classCon = tyConSingleDataCon (classTyCon cc_class)
         (args, checks) = unzip args_n_checks
         proof = evDataConApp classCon cc_tyargs $ scEvIds ++ args
@@ -819,9 +814,9 @@ solveDynDispatch ptc@PTC{..} ct | CDictCan{..} <- ct
                  (fappArgs, fappChecks) <- unzip <$> mapM toFappArg (matches revl res_ty)
                  let fapp_app = mkCoreApps fapp fappArgs
                      -- If the result is dependent on the type, we must wrap it in
-                     -- a toDyn. I.e. for Ord Dynamic, 
+                     -- a toDyn. I.e. for Ord Dynamic,
                      -- max :: a -> a -> a  must have the type Dynamic -> Dynamic -> Dynamic
-                     -- so we must cast the result to 
+                     -- so we must cast the result to
                      --
                      -- NOTE BREAKS, i.e. max (A :: Dynamic) (B :: Dynamic)
                      --             is just the latter argument.
