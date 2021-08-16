@@ -1,0 +1,10 @@
+cradle:
+  cabal:
+    - path: "./Tests/Message.hs"
+      component: "test:test_message"
+    - path: "./Tests/MessageClass.hs"
+      component: "test:test_message_class"
+    - path: "./Tests/Test.hs"
+      component: "test:test_dyn"
+    - path: "./Data/Dynamic/"
+      component: "lib:dynamic-haskell-plugin"

@@ -22,6 +22,48 @@ library
   exposed-modules:
     Data.Dynamic.Plugin
 
+test-suite test_dyn
+  default-language: Haskell2010
+  ghc-options: -dynamic
+  type: exitcode-stdio-1.0
+  build-depends:  base >= 4 && < 5,
+                  ghc-prim >= 0.5,
+                  ghc >= 8 && < 9,
+                  containers >= 0.6 && < 0.7,
+                  dynamic-haskell-plugin
+  default-extensions: DataKinds,
+                      FlexibleInstances,
+                      MultiParamTypeClasses,
+                      FlexibleContexts,
+                      TypeFamilies,
+                      PolyKinds,
+                      UndecidableInstances,
+                      TypeOperators,
+                      TypeApplications,
+                      ScopedTypeVariables,
+                      RoleAnnotations
+  main-is: Tests/Test.hs
+
+test-suite test_message
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  build-depends:  base >= 4 && < 5,
+                  ghc-prim >= 0.5,
+                  ghc >= 8 && < 9,
+                  containers >= 0.6 && < 0.7,
+                  dynamic-haskell-plugin
+  main-is: Tests/Message.hs
+
+test-suite test_message_class
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  build-depends:  base >= 4 && < 5,
+                  ghc-prim >= 0.5,
+                  ghc >= 8 && < 9,
+                  containers >= 0.6 && < 0.7,
+                  dynamic-haskell-plugin
+  main-is: Tests/MessageClass.hs
+
 Source-repository head
   Type:     git
   Location: https://github.com/tritlo/dynamic-haskell-plugin.git

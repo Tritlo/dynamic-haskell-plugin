@@ -1,9 +1,9 @@
-name: Test
+name: Example
 cabal-version: >= 1.24
 build-type: Simple
 version: 1.0.0
 
-executable test_dyn
+executable example
   default-language: Haskell2010
   build-depends:  base >= 4 && < 5,
                   ghc-prim >= 0.5,
@@ -20,5 +20,5 @@ executable test_dyn
               TypeApplications,
               ScopedTypeVariables,
               RoleAnnotations
-  main-is: Test.hs
+  main-is: Example.hs
 
