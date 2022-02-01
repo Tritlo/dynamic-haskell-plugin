@@ -2,3 +2,4 @@ packages: ./
           ./Example
           ./Message
           ./MessageClass
+          ./PingPong
